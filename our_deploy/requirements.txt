@@ -17,7 +17,6 @@ protobuf
 
 # Data processing
 h5py
-numpy
 pillow
 opencv-python
 einops
