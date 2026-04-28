@@ -330,13 +330,13 @@ def get_norm_stats(data_dir: str, action_dim: int = 7):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--vla_path', type=str, required=True, help='Path to UniVLA model')
-    parser.add_argument('--lam_path', type=str, default='', help='Path to LAM checkpoint')
+    parser.add_argument('--vla_path', type=str, default="/mnt/wangxiaofa/pt_weights/univla-7b", help='Path to UniVLA model')
+    parser.add_argument('--lam_path', type=str, default="/mnt/wangxiaofa/pt_weights/univla-latent-action-model/lam-stage-2.ckpt", help='Path to LAM checkpoint')
     parser.add_argument('--data_dir', type=str, required=True, help='Path to converted data')
     parser.add_argument('--run_dir', type=str, default='./runs/lerobot_full')
-    parser.add_argument('--batch_size', type=int, default=4)
-    parser.add_argument('--max_steps', type=int, default=10000)
-    parser.add_argument('--save_steps', type=int, default=1000)
+    parser.add_argument('--batch_size', type=int, default=12)
+    parser.add_argument('--max_steps', type=int, default=40000)
+    parser.add_argument('--save_steps', type=int, default=2000)
     parser.add_argument('--learning_rate', type=float, default=3.5e-4)
     parser.add_argument('--grad_accumulation_steps', type=int, default=2)
     parser.add_argument('--window_size', type=int, default=10)
