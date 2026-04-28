@@ -30,6 +30,7 @@ classifiers = [
 dependencies = [
     "absl_py==2.1.0",
     "accelerate==0.32.1",
+    "braceexpand==0.1.7",
     "dlimp @ git+https://github.com/moojink/dlimp_openvla",
     "draccus==0.8.0",
     "einops==0.8.1",
