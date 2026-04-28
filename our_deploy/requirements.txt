@@ -1,0 +1,37 @@
+# UniVLA Fine-tuning Requirements
+# ================================
+
+# PyTorch (install with CUDA support)
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Transformers and PEFT
+transformers>=4.40.0
+accelerate>=0.30.0
+peft>=0.10.0
+bitsandbytes>=0.43.0
+sentencepiece
+protobuf
+
+# Data processing
+h5py
+numpy
+pillow
+opencv-python
+einops
+
+# Training utilities
+wandb
+draccus
+ema-pytorch
+tqdm
+lightning
+
+# LAM dependencies
+piq
+timm
+
+# Optional: flash-attn for faster inference
+# pip install flash-attn --no-build-isolation
