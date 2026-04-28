@@ -15,8 +15,10 @@ Usage:
 import os
 import json
 import argparse
+import logging
 from pathlib import Path
 from collections import deque
+from datetime import datetime
 from typing import Optional, List, Dict, Sequence
 
 import torch
@@ -44,6 +46,48 @@ from prismatic.models.policy.transformer_utils import MAPBlock
 from latent_action_model.genie.modules.lam import ControllableDINOLatentActionModel
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+def setup_logging(log_dir: str, log_name: str = "train.log") -> logging.Logger:
+    """Setup logging to file and console.
+    
+    Args:
+        log_dir: Directory to save log files
+        log_name: Name of the log file
+    
+    Returns:
+        Logger instance
+    """
+    log_dir = Path(log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    log_file = log_dir / log_name
+    
+    # Create logger
+    logger = logging.getLogger("UniVLA")
+    logger.setLevel(logging.INFO)
+    
+    # Clear existing handlers
+    logger.handlers.clear()
+    
+    # File handler
+    file_handler = logging.FileHandler(log_file, mode='a')
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+    
+    return logger
 
 
 class ActionDecoder(nn.Module):
@@ -347,16 +391,29 @@ def main():
     parser.add_argument('--lora_dropout', type=float, default=0.0)
     parser.add_argument('--freeze_vla', type=bool, default=False)
     parser.add_argument('--image_aug', type=bool, default=False)
+    parser.add_argument('--log_dir', type=str, default=None, help='Directory to save logs (default: run_dir/logs)')
     args = parser.parse_args()
+
+    # Create run directory
+    run_dir = Path(args.run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    # Setup logging
+    log_dir = Path(args.log_dir) if args.log_dir else run_dir / 'logs'
+    logger = setup_logging(log_dir, log_name=f"train_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+    
+    logger.info("=" * 50)
+    logger.info("UniVLA Fine-tuning Configuration")
+    logger.info("=" * 50)
+    for arg, value in vars(args).items():
+        logger.info(f"{arg}: {value}")
+    logger.info("=" * 50)
 
     # Set device
     assert torch.cuda.is_available(), "Fine-tuning requires GPU!"
     device = torch.device("cuda:0")
     torch.cuda.set_device(device)
-
-    # Create run directory
-    run_dir = Path(args.run_dir)
-    run_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Using device: {device}")
 
     # Register OpenVLA model classes
     AutoConfig.register("openvla", OpenVLAConfig)
@@ -365,7 +422,7 @@ def main():
     AutoModelForVision2Seq.register(OpenVLAConfig, OpenVLAForActionPrediction)
 
     # Load processor and model
-    print(f"Loading model from {args.vla_path}")
+    logger.info(f"Loading model from {args.vla_path}")
     processor = AutoProcessor.from_pretrained(args.vla_path, trust_remote_code=True)
     vla = AutoModelForVision2Seq.from_pretrained(
         args.vla_path,
@@ -397,12 +454,12 @@ def main():
 
     # Print trainable parameters
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total trainable parameters: {trainable_params:,}")
+    logger.info(f"Total trainable parameters: {trainable_params:,}")
 
     # Load LAM model if provided
     lam = None
     if args.lam_path and os.path.exists(args.lam_path):
-        print(f"Loading LAM from {args.lam_path}")
+        logger.info(f"Loading LAM from {args.lam_path}")
         lam = ControllableDINOLatentActionModel(
             in_dim=3,
             model_dim=768,
@@ -419,7 +476,7 @@ def main():
             new_ckpt[key.replace("lam.", "")] = lam_ckpt[key]
         lam.load_state_dict(new_ckpt, strict=True)
         lam = lam.to(device).eval()
-        print("LAM loaded successfully!")
+        logger.info("LAM loaded successfully!")
 
     # Create optimizer and scheduler
     optimizer = AdamW(
@@ -464,7 +521,7 @@ def main():
     )
 
     # Training loop
-    print("Starting training...")
+    logger.info("Starting training...")
     recent_losses = deque(maxlen=args.grad_accumulation_steps)
     recent_l1_losses = deque(maxlen=args.grad_accumulation_steps)
 
@@ -582,10 +639,11 @@ def main():
                         'l1': f'{avg_l1:.4f}',
                         'step': step,
                     })
+                    logger.info(f"Step {step}: loss={avg_loss:.4f}, l1={avg_l1:.4f}, lr={scheduler.get_last_lr()[0]:.6f}")
 
                 # Save checkpoint
                 if step > 0 and step % args.save_steps == 0:
-                    print(f"\nSaving checkpoint at step {step}")
+                    logger.info(f"Saving checkpoint at step {step}")
                     torch.save(
                         model.action_decoder.state_dict(),
                         run_dir / f'action_decoder-{step}.pt',
@@ -598,13 +656,14 @@ def main():
                 step += 1
 
     # Final save
-    print("Training complete!")
+    logger.info("Training complete!")
     torch.save(model.action_decoder.state_dict(), run_dir / 'action_decoder-final.pt')
     if args.use_lora:
         model.vla.save_pretrained(run_dir / 'adapter')
     else:
         model.vla.save_pretrained(run_dir)
-    print(f"Model saved to {run_dir}")
+    logger.info(f"Model saved to {run_dir}")
+    logger.info(f"Logs saved to {log_dir}")
 
 
 if __name__ == "__main__":
