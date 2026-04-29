@@ -416,7 +416,7 @@ def main():
     logger.info("=" * 50)
 
     # Set device
-    # assert torch.cuda.is_available(), "Fine-tuning requires GPU!"
+    assert torch.cuda.is_available(), "Fine-tuning requires GPU!"
     device = torch.device("cuda:0")
     torch.cuda.set_device(device)
     logger.info(f"Using device: {device}")
