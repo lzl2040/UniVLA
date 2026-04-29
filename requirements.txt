@@ -39,8 +39,8 @@ tensorflow_graphics==2021.12.3
 termcolor==3.0.1
 timm==0.9.10
 tokenizers==0.19.1
-torch==2.2.0
-torchvision==0.17.0
+# torch==2.2.0
+# torchvision==0.17.0
 tqdm==4.66.4
 transformers==4.40.1
 webdataset==0.2.111
