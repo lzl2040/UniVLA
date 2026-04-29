@@ -201,7 +201,7 @@ class LeRobotHDF5Dataset(Dataset):
                 num_frames = f['action'].shape[0]
                 
                 # Load images
-                imgs = f['top_rgb'][:]  # (T, H, W, 3)
+                imgs = f['right_rgb'][:]  # (T, H, W, 3)
                 self.images.append(imgs)
                 
                 # Load actions
@@ -220,8 +220,14 @@ class LeRobotHDF5Dataset(Dataset):
                 self.proprios.append(proprio)
                 
                 # Use dataset_info.json for instructions
-                instruction = "pick up the block"  # Default
-                self.instructions.append(instruction)
+                # if "block" in data_dir:
+                #     instruction = "Put the building block into the corresponding slot."  # Default
+                # elif "cup" in data_dir:
+                #     instruction = ""
+                # print(f['task'])
+                task = f.attrs['task']
+                # print(task)
+                self.instructions.append(task)
 
         print(f"Total episodes: {len(self.episodes)}")
 
@@ -235,7 +241,7 @@ class LeRobotHDF5Dataset(Dataset):
         instruction = self.instructions[idx]
         
         num_frames = len(actions)
-        extra_frame_num = np.random.randint(0, 2)
+        extra_frame_num = np.random.randint(0, 1)
         window_size = self.window_size + extra_frame_num
         
         # Random start index
