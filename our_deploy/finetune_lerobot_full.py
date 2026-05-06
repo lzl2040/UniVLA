@@ -398,6 +398,7 @@ def main():
     parser.add_argument('--freeze_vla', type=bool, default=False)
     parser.add_argument('--image_aug', type=bool, default=False)
     parser.add_argument('--log_dir', type=str, default=None, help='Directory to save logs (default: run_dir/logs)')
+    parser.add_argument('--resume', type=str, default=None, help='Path to checkpoint directory or step number to resume from (e.g., ./runs/lerobot_full or ./runs/lerobot_full/checkpoint-2000)')
     args = parser.parse_args()
 
     # Create run directory
@@ -461,6 +462,76 @@ def main():
     # Print trainable parameters
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Total trainable parameters: {trainable_params:,}")
+
+    # Resume from checkpoint if specified
+    start_step = 0
+    if args.resume:
+        resume_path = Path(args.resume)
+        
+        # Determine checkpoint path
+        if resume_path.is_dir():
+            # Check if it's a direct checkpoint directory or a run directory
+            if (resume_path / 'action_decoder-final.pt').exists():
+                # It's a run directory, use final checkpoint
+                action_decoder_path = resume_path / 'action_decoder-final.pt'
+                adapter_path = resume_path / 'adapter'
+                model_path = resume_path / 'model'
+                logger.info(f"Resuming from final checkpoint in {resume_path}")
+            else:
+                # Look for step checkpoints
+                checkpoints = sorted(resume_path.glob('action_decoder-*.pt'))
+                if checkpoints:
+                    # Use the latest checkpoint
+                    latest_checkpoint = checkpoints[-1]
+                    step_num = latest_checkpoint.stem.split('-')[-1].replace('.pt', '')
+                    action_decoder_path = resume_path / f'action_decoder-{step_num}.pt'
+                    adapter_path = resume_path / f'adapter-{step_num}'
+                    model_path = resume_path / f'model-{step_num}'
+                    start_step = int(step_num)
+                    logger.info(f"Resuming from step {start_step} checkpoint in {resume_path}")
+                else:
+                    # Check if resume_path itself contains checkpoint files
+                    action_decoder_path = resume_path / 'action_decoder.pt'
+                    adapter_path = resume_path
+                    model_path = resume_path
+                    logger.info(f"Attempting to resume from {resume_path}")
+        else:
+            # Assume it's a path pattern like ./runs/lerobot_full/checkpoint-2000
+            logger.error(f"Resume path {resume_path} does not exist or is not a directory")
+            raise ValueError(f"Resume path {resume_path} does not exist or is not a directory")
+        
+        # Load action decoder weights
+        if action_decoder_path.exists():
+            logger.info(f"Loading action decoder from {action_decoder_path}")
+            model.action_decoder.load_state_dict(torch.load(action_decoder_path, map_location=device))
+            logger.info("Action decoder loaded successfully!")
+        else:
+            logger.warning(f"Action decoder checkpoint not found at {action_decoder_path}")
+        
+        # Load VLA/LoRA weights
+        if args.use_lora:
+            if adapter_path.exists():
+                logger.info(f"Loading LoRA adapter from {adapter_path}")
+                model.vla = PeftModel.from_pretrained(model.vla, adapter_path)
+                model.vla.print_trainable_parameters()
+                logger.info("LoRA adapter loaded successfully!")
+            else:
+                logger.warning(f"LoRA adapter checkpoint not found at {adapter_path}")
+        else:
+            if model_path.exists():
+                logger.info(f"Loading full VLA model from {model_path}")
+                model.vla = AutoModelForVision2Seq.from_pretrained(
+                    model_path,
+                    torch_dtype=torch.bfloat16,
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True,
+                )
+                model.vla = model.vla.to(device)
+                logger.info("VLA model loaded successfully!")
+            else:
+                logger.warning(f"Full model checkpoint not found at {model_path}")
+        
+        logger.info(f"Resuming training from step {start_step}")
 
     # Load LAM model if provided
     lam = None
@@ -534,10 +605,16 @@ def main():
     model.train()
     optimizer.zero_grad()
 
-    step = 0
+    step = start_step
     epoch = 0
 
-    with tqdm.tqdm(total=args.max_steps, desc="Training") as progress:
+    # Advance scheduler to the correct step if resuming
+    if start_step > 0:
+        logger.info(f"Advancing scheduler to step {start_step}")
+        for _ in range(start_step):
+            scheduler.step()
+
+    with tqdm.tqdm(initial=start_step, total=args.max_steps, desc="Training") as progress:
         while step < args.max_steps:
             epoch += 1
             for batch in dataloader:
